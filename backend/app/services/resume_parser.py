@@ -1,6 +1,6 @@
 import io
 import re
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from docx import Document
 from pypdf import PdfReader

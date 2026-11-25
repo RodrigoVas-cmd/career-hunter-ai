@@ -3,12 +3,16 @@
 import { useEffect, useState } from "react";
 import { ShieldCheck } from "lucide-react";
 import AppShell from "@/components/AppShell";
-import { api, CareerPreference } from "@/lib/api";
+import { api, ApiError, CareerPreference } from "@/lib/api";
 
 export default function SettingsPage() {
   const [prefs, setPrefs] = useState<Partial<CareerPreference>>({});
   const [openaiKeyInput, setOpenaiKeyInput] = useState("");
   const [saved, setSaved] = useState(false);
+  const [currPass, setCurrPass] = useState("");
+  const [newPass, setNewPass] = useState("");
+  const [passMsg, setPassMsg] = useState<string | null>(null);
+  const [passErr, setPassErr] = useState<string | null>(null);
 
   useEffect(() => {
     api.getPreferences().then(setPrefs);
@@ -234,6 +238,66 @@ export default function SettingsPage() {
             className="px-5 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700"
           >
             Salvar configurações
+          </button>
+        </form>
+
+        <form
+          onSubmit={async (e) => {
+            e.preventDefault();
+            setPassMsg(null);
+            setPassErr(null);
+            try {
+              const res = await api.changePassword(currPass, newPass);
+              setPassMsg(res.message);
+              setCurrPass("");
+              setNewPass("");
+            } catch (err) {
+              setPassErr(err instanceof ApiError ? err.message : "Erro ao alterar senha.");
+            }
+          }}
+          className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4"
+        >
+          <h2 className="text-base font-bold text-slate-900">Segurança — Alterar senha</h2>
+          {passErr && (
+            <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-sm text-red-700">
+              {passErr}
+            </div>
+          )}
+          {passMsg && (
+            <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-sm text-emerald-700">
+              {passMsg}
+            </div>
+          )}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700">Senha atual</label>
+              <input
+                type="password"
+                required
+                value={currPass}
+                onChange={(e) => setCurrPass(e.target.value)}
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700">
+                Nova senha (mín. 8 caracteres)
+              </label>
+              <input
+                type="password"
+                required
+                minLength={8}
+                value={newPass}
+                onChange={(e) => setNewPass(e.target.value)}
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              />
+            </div>
+          </div>
+          <button
+            type="submit"
+            className="px-5 py-2.5 rounded-xl bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800"
+          >
+            Atualizar senha
           </button>
         </form>
       </div>

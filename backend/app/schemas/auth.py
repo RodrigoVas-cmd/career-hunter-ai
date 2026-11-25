@@ -40,3 +40,17 @@ class UserMeResponse(BaseModel):
 class OnboardingProgressUpdate(BaseModel):
     onboarding_step: int = Field(ge=1, le=6)
     onboarding_completed: Optional[bool] = None
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str = Field(min_length=10)
+    new_password: str = Field(min_length=8, max_length=128)
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str = Field(min_length=8, max_length=128)

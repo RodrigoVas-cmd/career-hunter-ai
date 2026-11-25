@@ -400,6 +400,26 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+  forgotPassword: (email: string) =>
+    request<{
+      email_sent: boolean;
+      smtp_configured: boolean;
+      message: string;
+      dev_reset_token?: string;
+    }>("/auth/forgot-password", {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    }),
+  resetPassword: (token: string, new_password: string) =>
+    request<{ message: string }>("/auth/reset-password", {
+      method: "POST",
+      body: JSON.stringify({ token, new_password }),
+    }),
+  changePassword: (current_password: string, new_password: string) =>
+    request<{ message: string }>("/auth/change-password", {
+      method: "POST",
+      body: JSON.stringify({ current_password, new_password }),
+    }),
   me: () => request<UserMe>("/auth/me"),
   updateOnboarding: (onboarding_step: number, onboarding_completed?: boolean) =>
     request<UserMe>("/auth/me/onboarding", {

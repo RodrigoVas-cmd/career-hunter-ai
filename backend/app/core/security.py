@@ -47,3 +47,26 @@ def decode_access_token(token: str) -> Dict[str, Any]:
         settings.JWT_SECRET_KEY,
         algorithms=[settings.JWT_ALGORITHM],
     )
+
+
+def create_password_reset_token(user_id: str, password_hash_prefix: str) -> str:
+    now = datetime.now(timezone.utc)
+    payload: Dict[str, Any] = {
+        "sub": user_id,
+        "purpose": "password_reset",
+        "ph": password_hash_prefix,
+        "iat": now,
+        "exp": now + timedelta(minutes=15),
+    }
+    return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+
+
+def decode_password_reset_token(token: str) -> Dict[str, Any]:
+    payload = jwt.decode(
+        token,
+        settings.JWT_SECRET_KEY,
+        algorithms=[settings.JWT_ALGORITHM],
+    )
+    if payload.get("purpose") != "password_reset":
+        raise jwt.InvalidTokenError("Invalid token purpose")
+    return payload

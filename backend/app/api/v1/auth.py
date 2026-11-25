@@ -1,12 +1,25 @@
+import smtplib
+from email.message import EmailMessage
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
+from app.core.config import get_settings
 from app.core.database import get_db
-from app.core.security import create_access_token, hash_password, verify_password
+from app.core.security import (
+    create_access_token,
+    create_password_reset_token,
+    decode_password_reset_token,
+    hash_password,
+    verify_password,
+)
 from app.models.user import CareerPreference, User, UserProfile
 from app.schemas.auth import (
+    ChangePasswordRequest,
+    ForgotPasswordRequest,
     OnboardingProgressUpdate,
+    ResetPasswordRequest,
     TokenResponse,
     UserLogin,
     UserMeResponse,
@@ -119,3 +132,119 @@ def update_onboarding_progress(
     db.commit()
     db.refresh(current_user)
     return current_user
+
+
+def _send_reset_email(to_email: str, reset_url: str) -> None:
+    cfg = get_settings()
+    msg = EmailMessage()
+    msg["Subject"] = "Career Hunter AI — Redefinição de senha"
+    msg["From"] = cfg.SMTP_FROM or cfg.SMTP_USER
+    msg["To"] = to_email
+    msg.set_content(
+        "Você solicitou a redefinição da sua senha no Career Hunter AI.\n\n"
+        f"Acesse o link abaixo (válido por 15 minutos):\n{reset_url}\n\n"
+        "Se você não solicitou essa alteração, ignore este e-mail."
+    )
+    with smtplib.SMTP(cfg.SMTP_HOST, cfg.SMTP_PORT, timeout=10) as smtp:
+        smtp.starttls()
+        if cfg.SMTP_USER and cfg.SMTP_PASSWORD:
+            smtp.login(cfg.SMTP_USER, cfg.SMTP_PASSWORD)
+        smtp.send_message(msg)
+
+
+@router.post("/forgot-password")
+def forgot_password(payload: ForgotPasswordRequest, db: Session = Depends(get_db)):
+    cfg = get_settings()
+    normalized_email = payload.email.lower().strip()
+    user = db.query(User).filter(User.email == normalized_email, User.is_active.is_(True)).first()
+
+    smtp_ready = bool(cfg.SMTP_HOST and (cfg.SMTP_FROM or cfg.SMTP_USER))
+    if not smtp_ready and cfg.ENVIRONMENT == "production":
+        return {
+            "email_sent": False,
+            "smtp_configured": False,
+            "message": (
+                "O envio automático de e-mail ainda não está configurado no servidor (SMTP). "
+                "Configure as variáveis SMTP no backend ou entre em contato com o suporte."
+            ),
+        }
+
+    dev_token = None
+    if user:
+        token = create_password_reset_token(user.id, user.hashed_password[:12])
+        reset_url = f"{cfg.FRONTEND_URL.rstrip('/')}/auth?mode=reset&token={token}"
+        if smtp_ready:
+            try:
+                _send_reset_email(user.email, reset_url)
+            except Exception as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail=f"Não foi possível enviar o e-mail de recuperação: {exc}",
+                )
+        elif cfg.ENVIRONMENT != "production":
+            dev_token = token
+
+    resp = {
+        "email_sent": smtp_ready,
+        "smtp_configured": smtp_ready,
+        "message": (
+            "Se este e-mail estiver cadastrado, enviamos um link de redefinição válido por 15 minutos."
+        ),
+    }
+    if dev_token:
+        resp["dev_reset_token"] = dev_token
+    return resp
+
+
+@router.post("/reset-password")
+def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db)):
+    try:
+        decoded = decode_password_reset_token(payload.token)
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Link ou token de redefinição inválido ou expirado.",
+        )
+
+    user = db.query(User).filter(User.id == decoded.get("sub")).first()
+    if not user or not user.is_active or user.hashed_password[:12] != decoded.get("ph"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Link ou token de redefinição inválido ou já utilizado.",
+        )
+
+    user.hashed_password = hash_password(payload.new_password)
+    record_audit_log(
+        db,
+        user_id=user.id,
+        actor_role=user.role,
+        action="user.password_reset",
+        entity_type="user",
+        entity_id=user.id,
+    )
+    db.commit()
+    return {"message": "Senha redefinida com sucesso! Você já pode entrar com a nova senha."}
+
+
+@router.post("/change-password")
+def change_password(
+    payload: ChangePasswordRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if not verify_password(payload.current_password, current_user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Senha atual incorreta.",
+        )
+    current_user.hashed_password = hash_password(payload.new_password)
+    record_audit_log(
+        db,
+        user_id=current_user.id,
+        actor_role=current_user.role,
+        action="user.password_changed",
+        entity_type="user",
+        entity_id=current_user.id,
+    )
+    db.commit()
+    return {"message": "Senha atualizada com sucesso."}

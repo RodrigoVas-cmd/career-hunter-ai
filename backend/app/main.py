@@ -8,7 +8,7 @@ from app.api.v1.router import api_router
 from app.core.config import get_settings
 from app.core.database import SessionLocal, engine
 from app.models import Base
-from app.services.plans import ensure_default_plans, promote_existing_users_to_pro
+from app.services.plans import ensure_default_plans
 
 settings = get_settings()
 
@@ -36,7 +36,6 @@ async def lifespan(_app: FastAPI):
     _ensure_sqlite_columns()
     with SessionLocal() as db:
         ensure_default_plans(db)
-        promote_existing_users_to_pro(db)
     yield
 
 

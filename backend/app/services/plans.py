@@ -48,7 +48,7 @@ PLAN_DEFINITIONS: List[Dict[str, Any]] = [
 
 
 def ensure_default_plans(db: Session) -> None:
-    """Seeds or updates official plans and features (including Free = 5 monthly analyses)."""
+    """Seeds missing official plans and features without overwriting admin-edited prices or limits."""
     for item in PLAN_DEFINITIONS:
         plan = db.query(Plan).filter(Plan.code == item["code"]).first()
         if not plan:
@@ -60,10 +60,6 @@ def ensure_default_plans(db: Session) -> None:
             )
             db.add(plan)
             db.flush()
-        else:
-            plan.name = item["name"]
-            plan.price_brl_cents = item["price_brl_cents"]
-            plan.is_active = True
 
         for fkey, (limit_val, desc) in item["features"].items():
             feat = (
@@ -80,9 +76,6 @@ def ensure_default_plans(db: Session) -> None:
                         description=desc,
                     )
                 )
-            else:
-                feat.limit_value = limit_val
-                feat.description = desc
     db.commit()
 
 
@@ -126,7 +119,8 @@ def _month_window_utc(now: datetime | None = None) -> tuple[datetime, datetime]:
 
 
 def get_user_plan_status(db: Session, user_id: str) -> Dict[str, Any]:
-    ensure_default_plans(db)
+    if not db.query(Plan).first():
+        ensure_default_plans(db)
     sub = (
         db.query(Subscription)
         .filter(Subscription.user_id == user_id, Subscription.status == "active")

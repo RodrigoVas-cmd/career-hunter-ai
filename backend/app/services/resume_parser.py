@@ -19,6 +19,7 @@ SECTION_ALIASES = {
         "experiência",
         "experiências",
         "experiência profissional",
+        "experiências profissionais",
         "histórico profissional",
         "work experience",
         "experience",
@@ -26,14 +27,25 @@ SECTION_ALIASES = {
     "education": ["formação", "formação acadêmica", "educação", "academic", "education"],
     "skills": [
         "competências",
+        "competências e habilidades",
         "habilidades",
+        "habilidades e qualificações",
+        "qualificações",
         "skills",
         "tecnologias",
         "conhecimentos",
         "hard skills",
         "soft skills",
     ],
-    "certifications": ["certificações", "certificados", "certifications", "cursos"],
+    "certifications": [
+        "certificações",
+        "certificados",
+        "certifications",
+        "cursos",
+        "cursos e certificações",
+        "cursos e certificados",
+        "formação complementar",
+    ],
     "languages": ["idiomas", "línguas", "languages"],
     "projects": ["projetos", "projects"],
 }
@@ -117,7 +129,30 @@ def parse_resume_bytes(content: bytes, file_format: str) -> Tuple[str, Dict[str,
     linkedins = LINKEDIN_RE.findall(raw_text)
 
     experiences: List[Dict[str, Any]] = []
-    exp_lines = sections.get("experience", [])
+    raw_exp_lines = sections.get("experience", [])
+    exp_lines: List[str] = []
+    i_merge = 0
+    while i_merge < len(raw_exp_lines):
+        cur = raw_exp_lines[i_merge]
+        nxt = raw_exp_lines[i_merge + 1] if i_merge + 1 < len(raw_exp_lines) else ""
+        cur_is_bullet = cur.startswith(("•", "-", "*", "▪"))
+        if (
+            not cur_is_bullet
+            and " | " in cur
+            and nxt
+            and not nxt.startswith(("•", "-", "*", "▪"))
+            and len(nxt) <= 45
+            and (
+                re.match(r"^\d{4}$", nxt.strip())
+                or (nxt.startswith("(") and bool(DATE_RANGE_RE.search(nxt)))
+                or (not DATE_RANGE_RE.search(cur) and bool(DATE_RANGE_RE.search(nxt)) and " | " not in nxt)
+            )
+        ):
+            exp_lines.append(f"{cur} {nxt}".strip())
+            i_merge += 2
+            continue
+        exp_lines.append(cur)
+        i_merge += 1
     current_exp: Dict[str, Any] | None = None
     pending_company_header: Tuple[str, Optional[str], str] | None = None
 

@@ -1,0 +1,28 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f8fafc;
+  --foreground: #0f172a;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+button:not(:disabled),
+[role="button"]:not([aria-disabled="true"]),
+a {
+  cursor: pointer;
+  transition: transform 120ms ease, opacity 120ms ease, background-color 150ms ease, border-color 150ms ease;
+}
+
+button:not(:disabled):active,
+[role="button"]:not([aria-disabled="true"]):active {
+  transform: translateY(1px) scale(0.97);
+}
+
+button:disabled {
+  cursor: not-allowed;
+}

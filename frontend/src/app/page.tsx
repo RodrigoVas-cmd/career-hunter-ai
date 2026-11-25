@@ -473,12 +473,12 @@ export default function LandingPage() {
                 O mesmo profissional. A mesma trajetória. Uma estratégia diferente para cada
                 oportunidade.
               </p>
-              <Link
-                href="/auth?mode=register"
+              <a
+                href="#planos"
                 className="inline-flex items-center justify-center px-7 py-3.5 rounded-xl bg-[#5035f5] text-white text-sm font-semibold hover:bg-indigo-700 transition shadow-sm"
               >
                 Personalizar meu currículo
-              </Link>
+              </a>
             </div>
           </div>
         </section>

@@ -347,9 +347,6 @@ def auto_discover_jobs(
             except Exception:
                 pass
 
-    if jobs_to_analyze:
-        record_analysis_usage(db, current_user.id, len(jobs_to_analyze))
-
     agent_run.status = "completed"
     agent_run.finished_at = datetime.now(timezone.utc)
     db.commit()

@@ -5,6 +5,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.billing import Plan, PlanFeature, Subscription, UsageEvent
+from app.models.user import User
 
 PLAN_DEFINITIONS: List[Dict[str, Any]] = [
     {
@@ -83,6 +84,35 @@ def ensure_default_plans(db: Session) -> None:
                 feat.limit_value = limit_val
                 feat.description = desc
     db.commit()
+
+
+def promote_existing_users_to_pro(db: Session) -> int:
+    """Upgrades all existing users on the platform to an active Pro subscription."""
+    ensure_default_plans(db)
+    pro_plan = db.query(Plan).filter(Plan.code == "pro").first()
+    if not pro_plan:
+        return 0
+
+    users = db.query(User).all()
+    upgraded = 0
+    for u in users:
+        sub = (
+            db.query(Subscription)
+            .filter(Subscription.user_id == u.id, Subscription.status == "active")
+            .first()
+        )
+        if not sub:
+            db.add(Subscription(user_id=u.id, plan_id=pro_plan.id, status="active"))
+            upgraded += 1
+        elif sub.plan_id != pro_plan.id:
+            # Upgrade free subscriptions to Pro (keep premium if any)
+            current_plan = db.query(Plan).filter(Plan.id == sub.plan_id).first()
+            if not current_plan or current_plan.code == "free":
+                sub.plan_id = pro_plan.id
+                upgraded += 1
+    if upgraded:
+        db.commit()
+    return upgraded
 
 
 def _month_window_utc(now: datetime | None = None) -> tuple[datetime, datetime]:

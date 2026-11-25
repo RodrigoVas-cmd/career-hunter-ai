@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from docx import Document
+from docx.shared import Inches, Pt, RGBColor
 from fpdf import FPDF
 import httpx
 
@@ -354,50 +355,83 @@ def build_ats_resume_version(
         "languages": profile.languages_json if profile else [],
     }
 
-    target_dir.mkdir(parents=True, exist_ok=True)
+    version_dir = target_dir / uuid.uuid4().hex[:8]
+    version_dir.mkdir(parents=True, exist_ok=True)
     stem = Path(base_filename).stem if base_filename else f"Curriculo_{user.full_name.replace(' ', '_')}"
-    docx_path = target_dir / f"{stem}-1.docx"
+    docx_path = version_dir / f"{stem}-1.docx"
     pdf_filename = f"{stem}-1.pdf"
-    pdf_path = target_dir / pdf_filename
+    pdf_path = version_dir / pdf_filename
 
-    # 1. Build DOCX
+    # 1. Build clean ATS DOCX
     doc = Document()
-    title_para = doc.add_heading(user.full_name, level=1)
-    title_para.paragraph_format.space_after = 2
-    contact_parts = [p for p in [contact_email, content_json["phone"], loc_str, content_json["linkedin_url"]] if p]
+    for sec in doc.sections:
+        sec.top_margin = Inches(0.6)
+        sec.bottom_margin = Inches(0.6)
+        sec.left_margin = Inches(0.7)
+        sec.right_margin = Inches(0.7)
+
+    normal_style = doc.styles["Normal"]
+    normal_style.font.name = "Calibri"
+    normal_style.font.size = Pt(10.5)
+    normal_style.font.color.rgb = RGBColor(15, 23, 42)
+
+    title_para = doc.add_paragraph()
+    title_para.paragraph_format.space_before = Pt(0)
+    title_para.paragraph_format.space_after = Pt(2)
+    title_run = title_para.add_run(user.full_name)
+    title_run.bold = True
+    title_run.font.size = Pt(18)
+    title_run.font.color.rgb = RGBColor(15, 23, 42)
+
+    contact_parts = [p for p in [loc_str, content_json["phone"], contact_email, content_json["linkedin_url"]] if p]
     if contact_parts:
         c_para = doc.add_paragraph(" | ".join(contact_parts))
-        c_para.paragraph_format.space_after = 8
+        c_para.paragraph_format.space_after = Pt(8)
+        for r in c_para.runs:
+            r.font.size = Pt(9.5)
+            r.font.color.rgb = RGBColor(71, 85, 105)
+
+    def add_section(heading_text: str) -> None:
+        h = doc.add_paragraph()
+        h.paragraph_format.space_before = Pt(10)
+        h.paragraph_format.space_after = Pt(3)
+        hr = h.add_run(heading_text)
+        hr.bold = True
+        hr.font.size = Pt(11.5)
+        hr.font.color.rgb = RGBColor(15, 35, 85)
 
     if objective:
-        doc.add_heading("Objetivo Profissional", level=2)
+        add_section("OBJETIVO PROFISSIONAL")
         p_obj = doc.add_paragraph()
+        p_obj.paragraph_format.space_after = Pt(4)
         r_obj = p_obj.add_run(objective)
         r_obj.bold = True
 
     if adapted_summary:
-        doc.add_heading("Resumo Profissional", level=2)
+        add_section("RESUMO PROFISSIONAL")
         for p_line in adapted_summary.splitlines():
             if p_line.strip():
-                doc.add_paragraph(p_line.strip())
+                p = doc.add_paragraph(p_line.strip())
+                p.paragraph_format.space_after = Pt(3)
 
     if ordered_skills:
-        doc.add_heading("Competências-Chave", level=2)
-        doc.add_paragraph(" • ".join(ordered_skills))
+        add_section("COMPETÊNCIAS-CHAVE")
+        p_sk = doc.add_paragraph(" • ".join(ordered_skills))
+        p_sk.paragraph_format.space_after = Pt(4)
 
     if exp_entries:
-        doc.add_heading("Experiência Profissional", level=2)
+        add_section("EXPERIÊNCIA PROFISSIONAL")
         for exp in exp_entries:
             header_p = doc.add_paragraph()
-            header_p.paragraph_format.space_before = 6
-            header_p.paragraph_format.space_after = 1
+            header_p.paragraph_format.space_before = Pt(6)
+            header_p.paragraph_format.space_after = Pt(1)
             comp_run = header_p.add_run(exp["company_name"])
             comp_run.bold = True
             if exp.get("sector"):
                 header_p.add_run(f" — {exp['sector']}")
 
             role_p = doc.add_paragraph()
-            role_p.paragraph_format.space_after = 3
+            role_p.paragraph_format.space_after = Pt(3)
             role_run = role_p.add_run(exp["role_title"])
             role_run.bold = True
             if exp.get("raw_period_text"):
@@ -405,23 +439,33 @@ def build_ats_resume_version(
                 per_run.italic = True
 
             for bullet in exp.get("responsibilities_list") or []:
-                doc.add_paragraph(bullet, style="List Bullet")
+                bp = doc.add_paragraph(bullet, style="List Bullet")
+                bp.paragraph_format.space_after = Pt(2)
 
             if exp.get("proven_results"):
                 res_p = doc.add_paragraph(style="List Bullet")
+                res_p.paragraph_format.space_after = Pt(2)
                 r_lbl = res_p.add_run("Resultados comprovados: ")
                 r_lbl.bold = True
                 res_p.add_run(exp["proven_results"])
 
     if content_json["education"]:
-        doc.add_heading("Formação Acadêmica", level=2)
+        add_section("FORMAÇÃO ACADÊMICA")
         for ed in content_json["education"]:
-            doc.add_paragraph(str(ed.get("raw") or ed), style="List Bullet")
+            bp = doc.add_paragraph(str(ed.get("raw") or ed), style="List Bullet")
+            bp.paragraph_format.space_after = Pt(2)
+
+    if content_json["certifications"]:
+        add_section("CERTIFICAÇÕES")
+        for cert in content_json["certifications"]:
+            bp = doc.add_paragraph(str(cert.get("raw") or cert), style="List Bullet")
+            bp.paragraph_format.space_after = Pt(2)
 
     if content_json["languages"]:
-        doc.add_heading("Idiomas", level=2)
+        add_section("IDIOMAS")
         for lang in content_json["languages"]:
-            doc.add_paragraph(str(lang.get("raw") or lang))
+            lp = doc.add_paragraph(str(lang.get("raw") or lang))
+            lp.paragraph_format.space_after = Pt(2)
 
     doc.save(str(docx_path))
 

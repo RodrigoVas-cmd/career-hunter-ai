@@ -74,13 +74,17 @@ async def upload_resume(
         ambiguities = [{"field": "document", "message": f"Erro ao processar arquivo: {exc}", "excerpt": ""}]
         parse_status = "failed"
 
-    # Mark previous primary resumes as secondary and refresh resume-extracted experiences
+    # Mark previous primary resumes as secondary and refresh resume-extracted experiences/skills
     db.query(Resume).filter(Resume.user_id == current_user.id, Resume.is_primary.is_(True)).update(
         {"is_primary": False}
     )
     db.query(ProfessionalExperience).filter(
         ProfessionalExperience.user_id == current_user.id,
         ProfessionalExperience.origin.in_(["resume_pdf", "resume_docx"]),
+    ).delete(synchronize_session=False)
+    db.query(VerifiedSkill).filter(
+        VerifiedSkill.user_id == current_user.id,
+        VerifiedSkill.origin.in_(["resume_pdf", "resume_docx", "ats_suggestion_from_cv"]),
     ).delete(synchronize_session=False)
 
     resume = Resume(
@@ -152,20 +156,16 @@ async def upload_resume(
     profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
     if profile:
         contact = extracted_data.get("contact", {})
-        if not profile.contact_email and contact.get("email"):
+        if contact.get("email"):
             profile.contact_email = contact["email"]
-        if not profile.phone and contact.get("phone"):
+        if contact.get("phone"):
             profile.phone = contact["phone"]
-        if not profile.linkedin_url and contact.get("linkedin_url"):
+        if contact.get("linkedin_url"):
             profile.linkedin_url = contact["linkedin_url"]
-        if not profile.summary and extracted_data.get("summary"):
-            profile.summary = extracted_data["summary"]
-        if not profile.education_json and extracted_data.get("education"):
-            profile.education_json = extracted_data["education"]
-        if not profile.certifications_json and extracted_data.get("certifications"):
-            profile.certifications_json = extracted_data["certifications"]
-        if not profile.languages_json and extracted_data.get("languages"):
-            profile.languages_json = extracted_data["languages"]
+        profile.summary = extracted_data.get("summary") or None
+        profile.education_json = extracted_data.get("education") or []
+        profile.certifications_json = extracted_data.get("certifications") or []
+        profile.languages_json = extracted_data.get("languages") or []
 
     record_audit_log(
         db,
@@ -425,17 +425,35 @@ def delete_resume(
         .filter(Resume.user_id == current_user.id, Resume.id != resume.id)
         .count()
     )
-    if evidence_ids and other_resumes_count == 0:
+    if evidence_ids:
         db.query(ProfessionalExperience).filter(
             ProfessionalExperience.user_id == current_user.id,
             ProfessionalExperience.evidence_source_id.in_(evidence_ids),
-            ProfessionalExperience.validation_status == "pending_review",
         ).delete(synchronize_session=False)
-    if evidence_ids:
+        db.query(VerifiedSkill).filter(
+            VerifiedSkill.user_id == current_user.id,
+            VerifiedSkill.evidence_source_id.in_(evidence_ids),
+        ).delete(synchronize_session=False)
         db.query(EvidenceSource).filter(
             EvidenceSource.user_id == current_user.id,
             EvidenceSource.id.in_(evidence_ids),
         ).delete(synchronize_session=False)
+
+    if other_resumes_count == 0:
+        db.query(ProfessionalExperience).filter(
+            ProfessionalExperience.user_id == current_user.id,
+            ProfessionalExperience.origin.in_(["resume_pdf", "resume_docx"]),
+        ).delete(synchronize_session=False)
+        db.query(VerifiedSkill).filter(
+            VerifiedSkill.user_id == current_user.id,
+            VerifiedSkill.origin.in_(["resume_pdf", "resume_docx", "ats_suggestion_from_cv"]),
+        ).delete(synchronize_session=False)
+        profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
+        if profile:
+            profile.summary = None
+            profile.education_json = []
+            profile.certifications_json = []
+            profile.languages_json = []
 
     was_primary = resume.is_primary
     storage_file = Path(resume.storage_path)

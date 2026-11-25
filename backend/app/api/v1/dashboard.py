@@ -8,6 +8,7 @@ from app.models.jobs import JobMatch, JobPosting
 from app.models.resume import Resume
 from app.models.targeting import FavoriteCompany, TargetRole
 from app.models.user import CareerPreference, ProfessionalExperience, User, VerifiedSkill
+from app.services.plans import PLAN_DEFINITIONS, get_user_plan_status
 
 router = APIRouter(prefix="/dashboard", tags=["Visão Geral"])
 
@@ -100,6 +101,8 @@ def get_dashboard_summary(
     if not (prefs and prefs.openai_api_key):
         unread_notifications += 1
 
+    plan_status = get_user_plan_status(db, current_user.id)
+
     return {
         "user": {
             "id": current_user.id,
@@ -107,6 +110,7 @@ def get_dashboard_summary(
             "onboarding_step": current_user.onboarding_step,
             "onboarding_completed": current_user.onboarding_completed,
         },
+        "plan": plan_status,
         "counts": {
             "resumes": resumes_count,
             "experiences": experiences_count,
@@ -125,3 +129,16 @@ def get_dashboard_summary(
             "unread_notifications": unread_notifications,
         },
     }
+
+
+@router.get("/plans")
+def list_public_plans():
+    return [
+        {
+            "code": p["code"],
+            "name": p["name"],
+            "price_brl_cents": p["price_brl_cents"],
+            "features": {k: {"limit": v[0], "label": v[1]} for k, v in p["features"].items()},
+        }
+        for p in PLAN_DEFINITIONS
+    ]

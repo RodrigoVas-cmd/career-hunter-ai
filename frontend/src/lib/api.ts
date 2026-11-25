@@ -219,6 +219,17 @@ export interface CareerPreference {
   openai_api_key?: string;
 }
 
+export interface PlanStatus {
+  plan_code: "free" | "pro" | "premium" | string;
+  plan_name: string;
+  price_brl_cents: number;
+  monthly_analyses_limit: number;
+  monthly_analyses_used: number;
+  monthly_analyses_remaining: number;
+  resets_at: string;
+  features: Record<string, number | null>;
+}
+
 export interface DashboardSummary {
   user: {
     id: string;
@@ -226,6 +237,7 @@ export interface DashboardSummary {
     onboarding_step: number;
     onboarding_completed: boolean;
   };
+  plan?: PlanStatus;
   counts: {
     resumes: number;
     experiences: number;

@@ -225,3 +225,34 @@ def test_company_watch_handles_success_and_inaccessible_sources(client, monkeypa
     assert body["total_jobs_found"] == 1
     assert any(r["company_name"] == "Nubank" and r["status"] == "monitorada" for r in body["results"])
     assert any(r["company_name"] == "Empresa Sem Link" and r["status"] == "cadastrada" for r in body["results"])
+
+
+def test_free_plan_five_monthly_analyses_limit(client):
+    headers = _register_and_auth(client, "quota_free@exemplo.com", "Candidato Free")
+    summary = client.get("/api/v1/dashboard/summary", headers=headers)
+    assert summary.status_code == 200
+    assert summary.json()["plan"]["plan_code"] == "free"
+    assert summary.json()["plan"]["monthly_analyses_limit"] == 5
+
+    # Create 1 active job and run matching 5 times (consuming 5 monthly analyses)
+    j = client.post(
+        "/api/v1/jobs/manual",
+        headers=headers,
+        json={
+            "company_name": "Empresa Teste",
+            "title": "Analista de Operações",
+            "description": "Gestão operacional e melhoria contínua.",
+            "original_url": "https://exemplo.com/vagas/op-1",
+            "modality": "hibrido",
+        },
+    )
+    assert j.status_code == 201
+
+    for _ in range(5):
+        r = client.post("/api/v1/jobs/matching/run", headers=headers)
+        assert r.status_code == 200
+
+    # 6th analysis in the same month must be blocked with 402
+    blocked = client.post("/api/v1/jobs/matching/run", headers=headers)
+    assert blocked.status_code == 402
+    assert "5 análises" in blocked.json()["detail"]

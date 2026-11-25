@@ -44,6 +44,7 @@ from app.services.connectors import (
     fetch_remotive_jobs,
 )
 from app.services.matching_engine import evaluate_job_match
+from app.services.plans import get_user_plan_status, record_analysis_usage
 
 router = APIRouter(prefix="/jobs", tags=["Radar de Vagas & Motor de Aderência"])
 
@@ -346,12 +347,23 @@ def auto_discover_jobs(
             except Exception:
                 pass
 
+    if jobs_to_analyze:
+        record_analysis_usage(db, current_user.id, len(jobs_to_analyze))
+
     agent_run.status = "completed"
     agent_run.finished_at = datetime.now(timezone.utc)
     db.commit()
 
     # Auto-run matching engine so Vagas Recomendadas is updated
-    matches = run_matching_engine(weights=None, current_user=current_user, db=db)
+    quota_reached = False
+    matches: List[JobMatchResponse] = []
+    try:
+        matches = run_matching_engine(weights=None, current_user=current_user, db=db)
+    except HTTPException as exc:
+        if exc.status_code == status.HTTP_402_PAYMENT_REQUIRED:
+            quota_reached = True
+        else:
+            raise
 
     return {
         "created_count": created_count,
@@ -360,6 +372,7 @@ def auto_discover_jobs(
         "allows_remote": allows_remote,
         "sources_checked": sources_checked,
         "matched_count": len(matches),
+        "quota_reached": quota_reached,
     }
 
 
@@ -778,6 +791,19 @@ def run_matching_engine(
         .all()
     )
 
+    plan_status = get_user_plan_status(db, current_user.id)
+    remaining = plan_status["monthly_analyses_remaining"]
+    if active_jobs and remaining <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail=(
+                f"Limite mensal de {plan_status['monthly_analyses_limit']} análises do plano "
+                f"{plan_status['plan_name']} atingido. Faça upgrade para o plano Pro ou Premium "
+                "para continuar analisando vagas."
+            ),
+        )
+    jobs_to_analyze = active_jobs[:remaining] if active_jobs else []
+
     agent_run = AgentRun(
         user_id=current_user.id,
         agent_name="job_matching",
@@ -790,7 +816,7 @@ def run_matching_engine(
     weights_dict = weights.model_dump() if weights else None
     responses: List[JobMatchResponse] = []
 
-    for job in active_jobs:
+    for job in jobs_to_analyze:
         reqs = db.query(JobRequirement).filter(JobRequirement.job_posting_id == job.id).all()
         is_fav = _is_fav_job(job, fav_ids, fav_names)
         eval_res = evaluate_job_match(
@@ -854,6 +880,9 @@ def run_matching_engine(
                 explanation=match_row.explanation_json,
             )
         )
+
+    if jobs_to_analyze:
+        record_analysis_usage(db, current_user.id, len(jobs_to_analyze))
 
     agent_run.status = "completed"
     agent_run.finished_at = datetime.now(timezone.utc)

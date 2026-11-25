@@ -131,6 +131,43 @@ export default function DashboardPage() {
           </div>
         </div>
 
+        {/* Plano & Consumo Mensal */}
+        {summary?.plan && (
+          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold uppercase tracking-wide text-[#5035f5]">
+                  Plano {summary.plan.plan_name}
+                </span>
+                <span className="text-xs text-slate-500">
+                  · {summary.plan.monthly_analyses_used} de {summary.plan.monthly_analyses_limit} análises utilizadas este mês
+                </span>
+              </div>
+              <div className="w-full sm:w-80 h-2 rounded-full bg-slate-100 overflow-hidden">
+                <div
+                  className="h-full bg-[#5035f5] transition-all"
+                  style={{
+                    width: `${Math.min(
+                      100,
+                      Math.round(
+                        (summary.plan.monthly_analyses_used /
+                          Math.max(1, summary.plan.monthly_analyses_limit)) *
+                          100
+                      )
+                    )}%`,
+                  }}
+                />
+              </div>
+            </div>
+            <Link
+              href="/app/assinatura"
+              className="text-xs font-semibold text-[#5035f5] hover:underline shrink-0"
+            >
+              Ver detalhes do plano →
+            </Link>
+          </div>
+        )}
+
         {/* Funil de Candidaturas */}
         <div className="space-y-3">
           <div className="flex items-center justify-between">
